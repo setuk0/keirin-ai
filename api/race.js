@@ -70,7 +70,7 @@ function parseRace(html, venue, race, url) {
   const players = [];
 
   for (let n = 1; n <= 7; n++) {
-    const re = new RegExp("(^|\\s)" + n + "\\s+([^\\s〖]{2,20})\\s*〖", "m");
+    const re = new RegExp("(^|\\s)" + n + "\\s+([一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}", "m");
     const match = text.match(re);
     if (match) players.push({ number:n, name:match[2] });
   }
@@ -112,12 +112,17 @@ module.exports = async function handler(req, res) {
     }
 
     const homeHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/");
-    const raceUrl = findRaceUrl(homeHtml, venue, race);
+    let raceUrl = findRaceUrl(homeHtml, venue, race);
+
+    if (!raceUrl) {
+      const cardHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
+      raceUrl = findRaceUrl(cardHtml, venue, race);
+    }
 
     if (!raceUrl) {
       return res.status(502).json({
         ok:false,
-        error:VENUE_NAMES[venue] + " " + race + "Rの詳細ページを見つけられませんでした"
+        error:VENUE_NAMES[venue] + " " + race + "Rの出走表URLを見つけられませんでした"
       });
     }
 
