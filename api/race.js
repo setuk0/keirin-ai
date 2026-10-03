@@ -20,7 +20,7 @@ function cleanHtml(html) {
     .replace(/&gt;/gi, ">")
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -97,7 +97,7 @@ function parsePlayers(text) {
     for (const re of patterns) {
       const match = text.match(re);
       if (match) {
-        const nameMatch = match[0].match(/\\s(\\S{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}/);
+        const nameMatch = match[0].match(/\s(\S{2,12})\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}/);
         if (nameMatch) found = nameMatch[1];
       }
       if (found) break;
@@ -114,11 +114,11 @@ function parseRace(html, venue, race, url) {
   const block = getRaceBlock(text, race);
   const players = parsePlayers(block);
 
-  const lineMatch = block.match(/並び予想[\\s\\S]{0,300}/);
+  const lineMatch = block.match(/並び予想[\s\S]{0,300}/);
   const lineText = lineMatch ? lineMatch[0] : "";
 
   const odds = [];
-  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\\s+([0-9,]+(?:\\.[0-9]+)?)/g;
+  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\s+([0-9,]+(?:\\.[0-9]+)?)/g;
   let om;
   while ((om = oddsRe.exec(block)) && odds.length < 30) {
     odds.push({ combination:om[1], odds:Number(om[2].replace(/,/g, "")) });
