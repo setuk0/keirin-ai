@@ -13,13 +13,13 @@ main{max-width:1180px;margin:auto;padding:24px 16px 50px}.hero{display:flex;just
 <header><div class="nav"><div class="logo">KEIRIN <span>AI</span></div><button onclick="document.getElementById('stats').scrollIntoView({behavior:'smooth'})">📊 成績・収支</button></div></header>
 <main>
 <div class="hero"><div><h1>競輪AI予想</h1><p>当日の開催情報を自動取得。サイト表示中は1分ごとに更新します。</p></div><select id="venue"><option>開催情報を取得中…</option></select></div>
-<div class="panel"><h2>本日のレース</h2><div class="races" id="races"></div><div id="liveStatus" class="notice"></div></div>
+<div class="panel"><h2>本日のレース</h2><div class="races" id="races"></div><div id="liveStatus" class="notice"></div><button id="predictBtn" onclick="showPrediction()" style="width:100%;margin-top:12px;background:linear-gradient(90deg,var(--accent2),var(--accent));border:0;color:#06111f;font-size:15px;padding:13px">🤖 AI予想を見る</button><div id="predictionLoading" class="notice" style="display:none;margin-top:10px;text-align:center">AIがレース展開を分析しています…</div></div>
 <div class="panel" id="stats"><h2>📊 AI予想 成績・収支</h2><div class="kpis"><div class="kpi"><b id="hitRate">—</b><span>買い目的中率</span></div><div class="kpi"><b id="returnRate">—</b><span>回収率</span></div><div class="kpi"><b id="profit">—</b><span>収支</span></div></div><div class="notice" style="margin-top:10px">実際のレース結果・払戻を連携した後に自動集計します。</div>
 <div class="prediction-actions"><button onclick="saveCurrentPrediction()">💾 この予想を保存</button><button onclick="scrollToHistory()">📋 保存履歴</button></div><div id="saveMessage"></div></div>
 <div class="grid">
 <section class="panel"><h2 id="raceTitle">開催情報取得中…</h2><div class="kpis"><div class="kpi"><b>—</b><span>1着確率</span></div><div class="kpi"><b>—</b><span>3着内確率</span></div><div class="kpi"><b>—</b><span>期待値指数</span></div></div><h2 style="margin-top:18px">AI選手評価</h2><div class="table-wrap"><table class="table"><thead><tr><th>車番</th><th>選手</th><th>脚質</th><th>AI指数</th><th>3着内</th></tr></thead><tbody id="riderRows"><tr><td colspan="5">レースデータを取得中…</td></tr></tbody></table></div></section>
 <aside class="panel"><h2>ライン・想定展開</h2><div class="linebox">当日の出走表を取得後にライン分析を表示します。</div><div class="analysis">現在は開催場の自動取得を優先しています。今後、出走表・オッズ・結果を接続するとAI予想まで自動化できます。</div></aside>
-<section class="panel"><h2>AI推奨買い目</h2><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>データ取得後に表示</strong></div><div>—</div></div></div></section>
+<section class="panel" id="predictionResult"><h2>AI推奨買い目</h2><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>「AI予想を見る」を押してください</strong></div><div>—</div></div></div></section>
 <section class="panel"><h2>AI予想の仕組み</h2><div class="kpis"><div class="kpi"><b>競走得点</b><span>直近成績・脚力</span></div><div class="kpi"><b>ライン</b><span>先行・番手・捲り</span></div><div class="kpi"><b>オッズ</b><span>確率と配当</span></div></div></section>
 <section class="panel" id="prediction-history"><h2>📝 予想履歴</h2><div id="historyList" class="history-list"></div><button onclick="clearHistory()" style="margin-top:8px">履歴を全削除</button></section>
 </div></main>
@@ -28,6 +28,19 @@ const venueEl=document.getElementById('venue'), raceEl=document.getElementById('
 function renderRaceButtons(){raceEl.innerHTML='';for(let i=1;i<=12;i++){const b=document.createElement('button');b.className='race'+(i===1?' active':'');b.innerHTML=i+'R<small>出走表</small>';b.onclick=()=>document.querySelectorAll('.race').forEach(x=>x.classList.toggle('active',x===b));raceEl.appendChild(b)}}
 renderRaceButtons();
 function setLiveMessage(t){document.getElementById('liveStatus').textContent=t}
+function showPrediction(){
+ const btn=document.getElementById('predictBtn'),loading=document.getElementById('predictionLoading'),result=document.getElementById('predictionResult');
+ const venue=venueEl.options[venueEl.selectedIndex]?.textContent||'開催場';
+ const race=document.querySelector('.race.active')?.textContent.match(/\d+/)?.[0]||'1';
+ btn.disabled=true; loading.style.display='block';
+ setTimeout(()=>{
+   const n=Number(race);
+   const a=((n*3)%7)+1, b=((n*5+1)%7)+1, c=((n*2+3)%7)+1;
+   result.innerHTML='<h2>AI推奨買い目</h2><div class="notice" style="margin-bottom:10px">🤖 '+esc(venue)+' '+n+'Rを分析しました（現在はデモAI）</div><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>本命　'+a+' → '+b+' → '+c+'</strong></div><div>◎</div></div><div class="ticket"><div><span class="star">★★★★☆</span><br><strong>対抗　'+b+' → '+a+' → '+c+'</strong></div><div>○</div></div><div class="ticket"><div><span class="star">★★★☆☆</span><br><strong>押さえ　'+a+' → '+c+' → '+b+'</strong></div><div>▲</div></div></div><div class="analysis" style="margin-top:10px">想定展開：先行ラインを軸に番手有利を評価。※実際の出走表・オッズを接続する前のデモ予想です。</div>';
+   document.getElementById('raceTitle').textContent=venue+' '+n+'R　AI分析完了';
+   loading.style.display='none'; btn.disabled=false; result.scrollIntoView({behavior:'smooth',block:'start'});
+ },900);
+}
 function resetStats(){document.getElementById('hitRate').textContent='—';document.getElementById('returnRate').textContent='—';document.getElementById('profit').textContent='—'}
 async function loadTodayVenues(){try{const r=await fetch('/api/today',{cache:'no-store'});if(!r.ok)throw new Error('取得失敗');const d=await r.json();venueEl.innerHTML=d.venues.map(v=>'<option value="'+v.slug+'">'+v.name+'</option>').join('');setLiveMessage('● '+d.date+' 当日開催を自動取得　最終取得 '+new Date(d.fetchedAt).toLocaleTimeString('ja-JP')+'　※サーバー側5分ごと／表示中は1分ごと');resetStats();document.getElementById('raceTitle').textContent=d.venues[0].name+' 1R　AI分析待機中';}catch(e){setLiveMessage('● 当日開催情報を取得できませんでした。再試行します。')}}
 loadTodayVenues();setInterval(loadTodayVenues,60000);
