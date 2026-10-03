@@ -13,18 +13,14 @@ async function fetchSchedule(){
 
 function parseToday(html){
   const plain=normalize(html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' '));
-  const d=new Date();
-  const y=d.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric'});
-  const m=Number(d.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric'}));
-  const day=Number(d.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',day:'numeric'}));
-  const marker=`本日 ${y}年${m}月${day}日 開催一覧`;
-  const start=plain.indexOf(marker);
-  if(start<0) throw new Error('today marker not found');
-  const after=plain.slice(start+marker.length);
-  const end=Math.max(0, after.indexOf('競輪'));
-  const listText=after.slice(0,end>0?end:1800);
+  const match=plain.match(/本日\s*(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日\s*開催一覧/);
+  if(!match) throw new Error('today marker not found in upstream page');
+  const y=match[1], m=Number(match[2]), day=Number(match[3]);
+  const start=plain.indexOf(match[0]);
+  const after=plain.slice(start+match[0].length);
+  const listText=after.slice(0,5000);
   const venues=VENUES.filter(([name])=>listText.includes(name)).map(([name,slug])=>({name,slug}));
-  if(!venues.length) throw new Error('no venues parsed');
+  if(!venues.length) throw new Error('no venues parsed from upstream page');
   return {date:`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`,venues,source:'https://keirin.kdreams.jp/kaisai/',fetchedAt:new Date().toISOString()};
 }
 
