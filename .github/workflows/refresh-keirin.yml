@@ -1,0 +1,19 @@
+name: Refresh Keirin data
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh Vercel API cache
+        run: |
+          set -e
+          URL="https://keirin-ai-mobile-ready-1.vercel.app/api/today"
+          echo "Refreshing: $URL"
+          curl --fail --silent --show-error --retry 3 --max-time 30 "$URL"
+          echo
+          echo "Refresh complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
