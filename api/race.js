@@ -11,129 +11,103 @@ const VENUE_NAMES = {
 
 function cleanHtml(html) {
   return String(html)
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
+    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
-    .replace(/\s+/g, " ")
+    .replace(/[\\t\\r\\n]+/g, " ")
+    .replace(/ +/g, " ")
     .trim();
 }
 
 async function fetchText(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "ja,en;q=0.8"
-      },
-      cache: "no-store",
-      signal: controller.signal
-    });
-    const body = await response.text();
-    if (!response.ok) throw new Error("Kドリームス HTTP " + response.status);
-    return body;
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml",
+      "Accept-Language": "ja,en;q=0.8"
+    },
+    cache: "no-store"
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error("Kドリームス HTTP " + response.status);
+  return body;
 }
 
 function findRaceUrl(html, venue, race) {
   const source = String(html);
-  const hrefRe = /href=["']([^"']+)["']/gi;
-  const target = String(race) + "R";
-  let match;
-
-  while ((match = hrefRe.exec(source))) {
-    const href = match[1];
-    if (href.indexOf("/" + venue + "/") === -1) continue;
-    if (href.indexOf("/racecard/") === -1 && href.indexOf("racedetail") === -1) continue;
-
-    const end = source.indexOf(">", hrefRe.lastIndex);
-    const close = source.indexOf("</a>", end);
-    if (end < 0 || close < 0) continue;
-
-    const anchorText = cleanHtml(source.slice(end + 1, close));
-    if (anchorText.indexOf(target) !== -1) {
+  const re = /href=["']([^"']+)["'][^>]*>[\\s\\S]*?<[^>]*>?[ \\t\\r\\n]*([0-9]{1,2})R[ \\t\\r\\n]*[\\s\\S]*?<\\/a>/gi;
+  let m;
+  while ((m = re.exec(source))) {
+    const href = m[1];
+    if (href.indexOf("/" + venue + "/") >= 0 &&
+        (href.indexOf("/racecard/") >= 0 || href.indexOf("racedetail") >= 0) &&
+        m[2] === String(race)) {
       return new URL(href, "https://keirin.kdreams.jp").href;
     }
   }
 
-  return null;
-}
-
-function getRaceBlock(text, race) {
-  const marker = String(race) + "R";
-  const start = text.indexOf(marker);
-  if (start < 0) return text;
-
-  const nextMarkers = [];
-  for (let n = race + 1; n <= 12; n++) {
-    const pos = text.indexOf(String(n) + "R", start + marker.length);
-    if (pos >= 0) nextMarkers.push(pos);
+  const hrefs = source.match(/href=["'][^"']*(?:racecard|racedetail)[^"']*["']/gi) || [];
+  for (const item of hrefs) {
+    const href = item.replace(/^href=["']|["']$/gi, "");
+    if (href.indexOf("/" + venue + "/") >= 0) {
+      const compact = href.replace(/[^0-9]/g, "");
+      if (compact.endsWith(String(race).padStart(2, "0"))) {
+        return new URL(href, "https://keirin.kdreams.jp").href;
+      }
+    }
   }
-  const end = nextMarkers.length ? Math.min(...nextMarkers) : text.length;
-  return text.slice(start, end);
+  return null;
 }
 
 function parsePlayers(text) {
   const players = [];
+  const lines = String(text).split(/ +/);
 
-  for (let n = 1; n <= 7; n++) {
-    const patterns = [
-      new RegExp("(?:^|\\s)" + n + "\\s+(?:[一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}\\s+\\d{2,3}\\s+[AS][12]", "m"),
-      new RegExp("(?:^|\\s)" + n + "\\s+([一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}(?:\\s+\\d{2,3})?", "m")
-    ];
+  for (let i = 0; i < lines.length; i++) {
+    const token = lines[i];
+    if (!/^[1-7]$/.test(token)) continue;
 
-    let found = null;
+    const number = Number(token);
+    const name = lines[i + 1];
+    const prefecture = lines[i + 2];
+    const age = lines[i + 3];
 
-    for (const re of patterns) {
-      const match = text.match(re);
-      if (match) {
-        const nameMatch = match[0].match(/\s(\S{2,12})\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}/);
-        if (nameMatch) found = nameMatch[1];
-      }
-      if (found) break;
+    if (!name || !prefecture || !age) continue;
+    if (!/^[一-龥ぁ-んァ-ヶー]{2,12}$/.test(name)) continue;
+    if (!/^[一-龥ぁ-んァ-ヶー]{2,6}$/.test(prefecture)) continue;
+    if (!/^\\d{2}$/.test(age)) continue;
+
+    if (!players.some(p => p.number === number)) {
+      players.push({ number, name });
     }
-
-    if (found) players.push({ number:n, name:found });
   }
 
-  return players;
+  return players.sort((a,b) => a.number - b.number);
 }
 
 function parseRace(html, venue, race, url) {
   const text = cleanHtml(html);
-  const block = getRaceBlock(text, race);
-  const players = parsePlayers(block);
+  const players = parsePlayers(text);
 
-  const lineMatch = block.match(/並び予想[\s\S]{0,300}/);
-  const lineText = lineMatch ? lineMatch[0] : "";
-
-  const odds = [];
-  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\s+([0-9,]+(?:\\.[0-9]+)?)/g;
-  let om;
-  while ((om = oddsRe.exec(block)) && odds.length < 30) {
-    odds.push({ combination:om[1], odds:Number(om[2].replace(/,/g, "")) });
-  }
+  const linePos = text.indexOf("並び予想");
+  const lineText = linePos >= 0 ? text.slice(linePos, linePos + 300) : "";
 
   return {
-    venue:venue,
-    venueName:VENUE_NAMES[venue],
-    race:race,
-    url:url,
-    players:players,
-    lineText:lineText,
-    odds:odds,
-    source:"Kドリームス",
-    fetchedAt:new Date().toISOString()
+    venue,
+    venueName: VENUE_NAMES[venue],
+    race,
+    url,
+    players,
+    lineText,
+    odds: [],
+    source: "Kドリームス",
+    fetchedAt: new Date().toISOString()
   };
 }
 
@@ -166,11 +140,9 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    let raceHtml = await fetchText(raceUrl);
+    const raceHtml = await fetchText(raceUrl);
     let data = parseRace(raceHtml, venue, race, raceUrl);
 
-    // 詳細ページがJS等で選手情報を含まない場合は、
-    // Kドリームスの出走表一覧ページを直接解析する。
     if (!data.players.length) {
       cardHtml = cardHtml || await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
       data = parseRace(cardHtml, venue, race, raceUrl);
@@ -183,7 +155,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ ok:true, data:data });
+    return res.status(200).json({ ok:true, data });
   } catch (error) {
     console.error("api/race error:", error);
     return res.status(502).json({
