@@ -12,9 +12,9 @@ const VENUE_NAMES = {
 function cleanHtml(html) {
   return String(html)
     .replace(/<script[^>]*>/gi, " ")
-    .replace(/<\\/script>/gi, " ")
+    .replaceAll("</script>", " ")
     .replace(/<style[^>]*>/gi, " ")
-    .replace(/<\\/style>/gi, " ")
+    .replaceAll("</style>", " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -42,14 +42,19 @@ async function fetchText(url) {
 
 function findRaceUrl(html, venue, race) {
   const source = String(html);
-  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\\/a>/gis;
+  const hrefRe = /href=["']([^"']+)["']/gi;
   let m;
 
-  while ((m = re.exec(source))) {
+  while ((m = hrefRe.exec(source))) {
     const href = m[1];
-    const anchorText = cleanHtml(m[2]);
     if (href.indexOf("/" + venue + "/") < 0) continue;
     if (href.indexOf("/racecard/") < 0 && href.indexOf("racedetail") < 0) continue;
+
+    const openEnd = source.indexOf(">", hrefRe.lastIndex);
+    const close = source.indexOf("</a>", openEnd);
+    if (openEnd < 0 || close < 0) continue;
+
+    const anchorText = cleanHtml(source.slice(openEnd + 1, close));
     if (anchorText.indexOf(String(race) + "R") >= 0) {
       return new URL(href, "https://keirin.kdreams.jp").href;
     }
