@@ -164,6 +164,8 @@ module.exports = async function handler(req, res) {
 
     const url = await findRacecardUrl(venue);
     if (!url) {
+      const fallback = omiyaFallback(race);
+      if (fallback && venue === "omiya") return res.status(200).json({ok:true,data:fallback,fallback:true});
       return res.status(200).json({
         ok:false,
         error:VENUE_NAMES[venue] + " " + race + "Rの出走表URLを取得できませんでした"
@@ -173,6 +175,8 @@ module.exports = async function handler(req, res) {
     const data = parse(await fetchText(url), venue, race, url);
 
     if (!data.players.length) {
+      const fallback = omiyaFallback(race);
+      if (fallback && venue === "omiya") return res.status(200).json({ok:true,data:fallback,fallback:true});
       return res.status(200).json({
         ok:false,
         error:VENUE_NAMES[venue] + " " + race + "Rの選手情報を解析できませんでした",
