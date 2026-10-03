@@ -1,25 +1,22 @@
 const VENUE_NAMES = {
-  hakodate:"函館", aomori:"青森", iwakitaira:"いわき平", yahiko:"弥彦", maebashi:"前橋",
-  toride:"取手", utsunomiya:"宇都宮", omiya:"大宮", seibuen:"西武園", keiokaku:"京王閣",
-  tachikawa:"立川", matsudo:"松戸", chiba:"千葉", kawasaki:"川崎", hiratsuka:"平塚",
-  odawara:"小田原", ito:"伊東", shizuoka:"静岡", nagoya:"名古屋", gifu:"岐阜",
-  ogaki:"大垣", toyohashi:"豊橋", toyama:"富山", matsusaka:"松阪", yokkaichi:"四日市",
-  fukui:"福井", nara:"奈良", mukomachi:"向日町", wakayama:"和歌山", kishiwada:"岸和田",
-  tamano:"玉野", hiroshima:"広島", hofu:"防府", takamatsu:"高松", komatsushima:"小松島",
-  kochi:"高知", matsuyama:"松山", kokura:"小倉", kurume:"久留米", takeo:"武雄",
-  sasebo:"佐世保", beppu:"別府", kumamoto:"熊本"
+  hakodate:"函館", aomori:"青森", iwakitaira:"いわき平", yahiko:"弥彦", maebashi:"前橋", toride:"取手",
+  utsunomiya:"宇都宮", omiya:"大宮", seibuen:"西武園", keiokaku:"京王閣", tachikawa:"立川",
+  matsudo:"松戸", chiba:"千葉", kawasaki:"川崎", hiratsuka:"平塚", odawara:"小田原", ito:"伊東",
+  shizuoka:"静岡", nagoya:"名古屋", gifu:"岐阜", ogaki:"大垣", toyohashi:"豊橋", toyama:"富山",
+  matsusaka:"松阪", yokkaichi:"四日市", fukui:"福井", nara:"奈良", mukomachi:"向日町",
+  wakayama:"和歌山", kishiwada:"岸和田", tamano:"玉野", hiroshima:"広島", hofu:"防府",
+  takamatsu:"高松", komatsushima:"小松島", kochi:"高知", matsuyama:"松山", kokura:"小倉",
+  kurume:"久留米", takeo:"武雄", sasebo:"佐世保", beppu:"別府", kumamoto:"熊本"
 };
 
 function cleanHtml(html) {
   return String(html)
-    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -28,31 +25,34 @@ async function fetchText(url) {
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const response = await fetch(url, {
-      method: "GET",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (compatible; KeirinAI/1.0)",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "ja,en;q=0.8"
       },
       cache: "no-store",
       signal: controller.signal
     });
-    const text = await response.text();
+    const body = await response.text();
     if (!response.ok) throw new Error("Kドリームス HTTP " + response.status);
-    return text;
+    return body;
   } finally {
     clearTimeout(timer);
   }
 }
 
-function findRaceUrl(homeHtml, venue, race) {
-  const html = String(homeHtml);
-  const re = /href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+function findRaceUrl(html, venue, race) {
+  const source = String(html);
+  const hrefRe = /href=["']([^"']+)["']/gi;
   let match;
-  while ((match = re.exec(html))) {
+  while ((match = hrefRe.exec(source))) {
     const href = match[1];
-    const text = cleanHtml(match[2]);
-    if (href.indexOf(venue) !== -1 && href.indexOf("racedetail") !== -1 && text.indexOf(String(race) + "R") !== -1) {
+    if (href.indexOf(venue) === -1 || href.indexOf("racedetail") === -1) continue;
+    const end = source.indexOf(">", hrefRe.lastIndex);
+    const close = source.indexOf("</a>", end);
+    if (end < 0 || close < 0) continue;
+    const anchorText = cleanHtml(source.slice(end + 1, close));
+    if (anchorText.indexOf(String(race) + "R") !== -1) {
       return new URL(href, "https://keirin.kdreams.jp").href;
     }
   }
@@ -62,10 +62,11 @@ function findRaceUrl(homeHtml, venue, race) {
 function parseRace(html, venue, race, url) {
   const text = cleanHtml(html);
   const players = [];
+
   for (let n = 1; n <= 7; n++) {
-    const re = new RegExp("(^|\\\\s)" + n + "\\\\s+([^\\\\s〖]{2,20})\\\\s*〖", "m");
-    const m = text.match(re);
-    if (m) players.push({ number:n, name:m[2] });
+    const re = new RegExp("(^|\\s)" + n + "\\s+([^\\s〖]{2,20})\\s*〖", "m");
+    const match = text.match(re);
+    if (match) players.push({ number:n, name:match[2] });
   }
 
   const lineMatch = text.match(/並び予想[\\s\\S]{0,300}/);
@@ -79,13 +80,13 @@ function parseRace(html, venue, race, url) {
   }
 
   return {
-    venue,
+    venue:venue,
     venueName:VENUE_NAMES[venue],
-    race,
-    url,
-    players,
-    lineText,
-    odds,
+    race:race,
+    url:url,
+    players:players,
+    lineText:lineText,
+    odds:odds,
     source:"Kドリームス",
     fetchedAt:new Date().toISOString()
   };
@@ -104,14 +105,13 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ ok:false, error:"開催場が不正です" });
     }
 
-    const homeUrl = "https://keirin.kdreams.jp/" + venue + "/";
-    const homeHtml = await fetchText(homeUrl);
+    const homeHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/");
     const raceUrl = findRaceUrl(homeHtml, venue, race);
 
     if (!raceUrl) {
       return res.status(502).json({
         ok:false,
-        error:"Kドリームスから" + VENUE_NAMES[venue] + " " + race + "Rの詳細ページを見つけられませんでした"
+        error:VENUE_NAMES[venue] + " " + race + "Rの詳細ページを見つけられませんでした"
       });
     }
 
@@ -122,12 +122,12 @@ module.exports = async function handler(req, res) {
       return res.status(502).json({ ok:false, error:"出走選手データを取得できませんでした" });
     }
 
-    return res.status(200).json({ ok:true, data });
+    return res.status(200).json({ ok:true, data:data });
   } catch (error) {
     console.error("api/race error:", error);
     return res.status(502).json({
       ok:false,
-      error: error && error.message ? error.message : "サーバー側でデータ取得に失敗しました"
+      error:error && error.message ? error.message : "サーバー側でデータ取得に失敗しました"
     });
   }
 };
