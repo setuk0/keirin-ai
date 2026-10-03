@@ -38,7 +38,9 @@ async function loadRaceData(){
  rows.innerHTML='<tr><td colspan="5">📡 出走表・ライン・オッズを取得中…</td></tr>';
  try{
   const r=await fetch('/api/race?venue='+encodeURIComponent(venue)+'&race='+race,{cache:'no-store'});
-  const j=await r.json();
+  const raw=await r.text();
+  let j;
+  try{j=JSON.parse(raw)}catch(_){throw new Error('APIサーバーがJSONを返していません（HTTP '+r.status+'）')};
   if(!r.ok||!j.ok) throw new Error(j.error||'データ取得失敗');
   currentRaceData=j.data;
   const players=j.data.players||[];
@@ -64,7 +66,10 @@ async function showPrediction(){
  const race=Number(document.querySelector('.race.active')?.textContent.match(/\d+/)?.[0]||1);
  btn.disabled=true; loading.style.display='block'; loading.textContent='📡 出走表・ライン・オッズを取得してAI分析中…';
  try{
-  const r=await fetch('/api/race?venue='+encodeURIComponent(venue)+'&race='+race,{cache:'no-store'}),j=await r.json();
+  const r=await fetch('/api/race?venue='+encodeURIComponent(venue)+'&race='+race,{cache:'no-store'});
+  const raw=await r.text();
+  let j;
+  try{j=JSON.parse(raw)}catch(_){throw new Error('APIサーバーがJSONを返していません（HTTP '+r.status+'）')};
   if(!r.ok||!j.ok) throw new Error(j.error||'データ取得失敗');
   const d=j.data, players=d.players||[], odds=d.odds||[];
   const nums=players.map(p=>p.number), a=nums[0]||1, b=nums[1]||2, c=nums[2]||3;
