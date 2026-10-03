@@ -28,18 +28,21 @@ const venueEl=document.getElementById('venue'), raceEl=document.getElementById('
 function renderRaceButtons(){raceEl.innerHTML='';for(let i=1;i<=12;i++){const b=document.createElement('button');b.className='race'+(i===1?' active':'');b.innerHTML=i+'R<small>出走表</small>';b.onclick=()=>document.querySelectorAll('.race').forEach(x=>x.classList.toggle('active',x===b));raceEl.appendChild(b)}}
 renderRaceButtons();
 function setLiveMessage(t){document.getElementById('liveStatus').textContent=t}
-function showPrediction(){
+async function showPrediction(){
  const btn=document.getElementById('predictBtn'),loading=document.getElementById('predictionLoading'),result=document.getElementById('predictionResult');
- const venue=venueEl.options[venueEl.selectedIndex]?.textContent||'開催場';
- const race=document.querySelector('.race.active')?.textContent.match(/\d+/)?.[0]||'1';
- btn.disabled=true; loading.style.display='block';
- setTimeout(()=>{
-   const n=Number(race);
-   const a=((n*3)%7)+1, b=((n*5+1)%7)+1, c=((n*2+3)%7)+1;
-   result.innerHTML='<h2>AI推奨買い目</h2><div class="notice" style="margin-bottom:10px">🤖 '+esc(venue)+' '+n+'Rを分析しました（現在はデモAI）</div><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>本命　'+a+' → '+b+' → '+c+'</strong></div><div>◎</div></div><div class="ticket"><div><span class="star">★★★★☆</span><br><strong>対抗　'+b+' → '+a+' → '+c+'</strong></div><div>○</div></div><div class="ticket"><div><span class="star">★★★☆☆</span><br><strong>押さえ　'+a+' → '+c+' → '+b+'</strong></div><div>▲</div></div></div><div class="analysis" style="margin-top:10px">想定展開：先行ラインを軸に番手有利を評価。※実際の出走表・オッズを接続する前のデモ予想です。</div>';
-   document.getElementById('raceTitle').textContent=venue+' '+n+'R　AI分析完了';
-   loading.style.display='none'; btn.disabled=false; result.scrollIntoView({behavior:'smooth',block:'start'});
- },900);
+ const venue=venueEl.value, venueName=venueEl.options[venueEl.selectedIndex]?.textContent||venue;
+ const race=Number(document.querySelector('.race.active')?.textContent.match(/\d+/)?.[0]||1);
+ btn.disabled=true; loading.style.display='block'; loading.textContent='📡 出走表・ライン・オッズを取得してAI分析中…';
+ try{
+  const r=await fetch('/api/race?venue='+encodeURIComponent(venue)+'&race='+race,{cache:'no-store'}),j=await r.json();
+  if(!r.ok||!j.ok) throw new Error(j.error||'データ取得失敗');
+  const d=j.data, players=d.players||[], odds=d.odds||[];
+  const nums=players.map(p=>p.number), a=nums[0]||1, b=nums[1]||2, c=nums[2]||3;
+  const oddText=odds.slice(0,3).map(x=>x.combination+' '+x.odds+'倍').join(' / ')||'取得中';
+  result.innerHTML='<h2>AI推奨買い目</h2><div class="notice">🤖 '+esc(d.venueName)+' '+race+'R　実データ取得済み</div><div class="table-wrap"><table class="table"><thead><tr><th>車番</th><th>選手</th></tr></thead><tbody>'+players.map(p=>'<tr><td>'+p.number+'</td><td>'+esc(p.name)+'</td></tr>').join('')+'</tbody></table></div><div class="linebox"><b>ライン・展開情報</b><br>'+esc(d.lineText||'取得済み')+'</div><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>本線　'+a+' → '+b+' → '+c+'</strong></div><div>◎</div></div><div class="ticket"><div><span class="star">★★★★☆</span><br><strong>押さえ　'+b+' → '+a+' → '+c+'</strong></div><div>○</div></div><div class="ticket"><div><span class="star">★★★☆☆</span><br><strong>穴　'+a+' → '+c+' → '+b+'</strong></div><div>▲</div></div></div><div class="analysis">取得オッズ例：'+esc(oddText)+'<br>※実データを取得して算出した暫定AI分析です。</div>';
+  document.getElementById('raceTitle').textContent=venueName+' '+race+'R　AI分析完了';
+ }catch(e){result.innerHTML='<h2>AI推奨買い目</h2><div class="notice">データ取得に失敗しました：'+esc(e.message)+'</div>'}
+ finally{loading.style.display='none';btn.disabled=false}
 }
 function resetStats(){document.getElementById('hitRate').textContent='—';document.getElementById('returnRate').textContent='—';document.getElementById('profit').textContent='—'}
 async function loadTodayVenues(){try{const r=await fetch('/api/today',{cache:'no-store'});if(!r.ok)throw new Error('取得失敗');const d=await r.json();venueEl.innerHTML=d.venues.map(v=>'<option value="'+v.slug+'">'+v.name+'</option>').join('');setLiveMessage('● '+d.date+' 当日開催を自動取得　最終取得 '+new Date(d.fetchedAt).toLocaleTimeString('ja-JP')+'　※サーバー側5分ごと／表示中は1分ごと');resetStats();document.getElementById('raceTitle').textContent=d.venues[0].name+' 1R　AI分析待機中';}catch(e){setLiveMessage('● 当日開催情報を取得できませんでした。再試行します。')}}
