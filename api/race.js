@@ -37,24 +37,23 @@ async function fetchText(url) {
 }
 
 function parsePlayers(text) {
-  const tokens = cleanHtml(text).split(" ");
+  const normalized = cleanHtml(text);
+  const re = /([1-7])\\s+([一-龥ぁ-んァ-ヶー]{2,12})\\s+([一-龥ぁ-んァ-ヶー]{2,6})\\s+(\\d{2})\\s+(\\d{2,3})\\s+(A\\d|S\\d)\\s+(逃|追|両|自在)/g;
   const players = [];
+  let m;
 
-  for (let i = 0; i < tokens.length - 3; i++) {
-    if (!/^[1-7]$/.test(tokens[i])) continue;
+  while ((m = re.exec(normalized)) !== null) {
+    const number = Number(m[1]);
+    if (players.some(p => p.number === number)) continue;
 
-    const number = Number(tokens[i]);
-    const name = tokens[i + 1];
-    const prefecture = tokens[i + 2];
-    const age = tokens[i + 3];
-
-    if (!/^[一-龥ぁ-んァ-ヶー]{2,12}$/.test(name)) continue;
-    if (!/^[一-龥ぁ-んァ-ヶー]{2,6}$/.test(prefecture)) continue;
-    if (!/^\d{2}$/.test(age)) continue;
-
-    if (!players.some(p => p.number === number)) {
-      players.push({ number, name });
-    }
+    players.push({
+      number,
+      name: m[2],
+      prefecture: m[3],
+      age: Number(m[4]),
+      grade: m[6],
+      style: m[7]
+    });
   }
 
   return players.sort((a,b) => a.number - b.number);
@@ -63,14 +62,42 @@ function parsePlayers(text) {
 function parse(html, venue, race, url) {
   const text = cleanHtml(html);
   const players = parsePlayers(text);
-  const p = text.indexOf("並び予想");
+
+  // 出走表ページは複数Rを含むため、対象R付近のライン情報を優先して取得
+  const raceMarker = new RegExp("(?:^|\\s)" + race + "R");
+  const markerMatch = raceMarker.exec(text);
+  const start = markerMatch ? markerMatch.index : 0;
+  const section = text.slice(start, start + 5000);
+  const p = section.indexOf("並び予想");
+
+  // Kドリームスの印を使って初期スコアを作る（後で独自モデルへ置換可能）
+  const marks = {};
+  const markRe = /([◎○▲△注×])\\s+[^ ]*\\s*([1-7])\\s+([1-7])\\s+([一-龥ぁ-んァ-ヶー]{2,12})/g;
+  let mm;
+  while ((mm = markRe.exec(section)) !== null) {
+    const n = Number(mm[2]);
+    if (!marks[n]) marks[n] = mm[1];
+  }
+
+  const base = { "◎":100, "○":94, "▲":88, "△":82, "注":76, "×":70 };
+  const scoredPlayers = players.map((p, i) => {
+    const markScore = base[marks[p.number]] || 62;
+    const styleBonus = p.style === "逃" ? 4 : p.style === "両" ? 3 : p.style === "自在" ? 2 : 1;
+    const aiScore = Math.min(100, markScore + styleBonus);
+    return {
+      ...p,
+      mark: marks[p.number] || "",
+      aiScore,
+      top3Probability: Math.max(8, Math.min(72, Math.round(aiScore * 0.66 - i * 1.5)))
+    };
+  });
 
   return {
     venue,
     venueName: VENUE_NAMES[venue],
     race,
     url,
-    players,
+    players: scoredPlayers,
     lineText: p >= 0 ? text.slice(p, p + 250) : "",
     odds: [],
     source: "Kドリームス",
@@ -114,23 +141,24 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ok:false,error:"開催場が不正です"});
     }
 
-    // 現在確認済みの大宮1Rは確実に返す
-    const fallback = omiyaFallback(race);
-    if (fallback && venue === "omiya") {
-      return res.status(200).json({ok:true,data:fallback});
-    }
-
-    const home = await fetchText("https://keirin.kdreams.jp/" + venue + "/");
+        const home = await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
     const marker = "/" + venue + "/racecard/";
-    const hrefs = home.match(/href=["'][^"']+["']/gi) || [];
+    const hrefs = home.match(/href=["'][^"']*\\/racecard\\/[^"']+["']/gi) || [];
     let url = null;
 
+    // 現在の開催に紐づく出走表一覧URLを優先
     for (const item of hrefs) {
       const href = item.replace(/^href=["']|["']$/gi, "");
-      if (href.indexOf(marker) >= 0 && href.indexOf(String(race).padStart(2,"0")) >= 0) {
+      if (href.indexOf(marker) >= 0 && /\\/racecard\\/\\d+\\//.test(href)) {
         url = new URL(href, "https://keirin.kdreams.jp").href;
         break;
       }
+    }
+
+    // 一覧ページ自身が開催ページの場合
+    if (!url && /\\/racecard\\/\\d+\\//.test(home)) {
+      const m = home.match(/https?:\\/\\/keirin\\.kdreams\\.jp\\/[^"'\\s]+\\/racecard\\/\\d+\\//);
+      if (m) url = m[0];
     }
 
     if (!url) {
