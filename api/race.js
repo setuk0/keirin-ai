@@ -1,6 +1,133 @@
-const VENUE_NAMES={hakodate:"函館",aomori:"青森",iwakitaira:"いわき平",yahiko:"弥彦",maebashi:"前橋",toride:"取手",utsunomiya:"宇都宮",omiya:"大宮",seibuen:"西武園",keiokaku:"京王閣",tachikawa:"立川",matsudo:"松戸",chiba:"千葉",kawasaki:"川崎",hiratsuka:"平塚",odawara:"小田原",ito:"伊東",shizuoka:"静岡",nagoya:"名古屋",gifu:"岐阜",ogaki:"大垣",toyohashi:"豊橋",toyama:"富山",matsusaka:"松阪",yokkaichi:"四日市",fukui:"福井",nara:"奈良",mukomachi:"向日町",wakayama:"和歌山",kishiwada:"岸和田",tamano:"玉野",hiroshima:"広島",hofu:"防府",takamatsu:"高松",komatsushima:"小松島",kochi:"高知",matsuyama:"松山",kokura:"小倉",kurume:"久留米",takeo:"武雄",sasebo:"佐世保",beppu:"別府",kumamoto:"熊本"};
-function strip(s){return String(s).replace(/<script[\\s\\S]*?<\\/script>/gi," ").replace(/<style[\\s\\S]*?<\\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim()}
-async function getHtml(url){const r=await fetch(url,{headers:{"user-agent":"Mozilla/5.0 (compatible; KeirinAI/1.0)","accept-language":"ja-JP,ja;q=0.9"},cache:"no-store"});if(!r.ok)throw new Error("upstream "+r.status);return await r.text()}
-function links(html,slug,race){const re=new RegExp("href=[\\\"']([^\\\"']*"+slug+"[^\\\"']*racedetail[^\\\"']*)[\\\"'][^>]*>([\\s\\S]{0,500}?)<\\/a>","gi");const out=[];let m;while((m=re.exec(html))){const text=strip(m[2]);if(text.includes(String(race)+"R"))out.push(new URL(m[1],"https://keirin.kdreams.jp").href)}return [...new Set(out)]}
-function parseRace(html,venue,race,url){const t=strip(html),players=[];for(let n=1;n<=7;n++){const re=new RegExp("(^|\\s)"+n+"\\s+([^\\s〖]{2,12})\\s*〖","m"),m=t.match(re);if(m)players.push({number:n,name:m[2]})}const line=(t.match(/並び予想[\\s\\S]{0,240}/)||[])[0]||"";const odds=[],re=/([1-7](?:-|=)[1-7](?:-|=)[1-7])\\s+([0-9,]+(?:\\.[0-9]+)?)/g;let m;while((m=re.exec(t))&&odds.length<30)odds.push({combination:m[1],odds:Number(m[2].replace(/,/g,""))});return {venue,venueName:VENUE_NAMES[venue]||venue,race,url,players,lineText:line,odds,source:"Kドリームス",fetchedAt:new Date().toISOString()}}
-module.exports=async function handler(req,res){try{const q=req.query||{},venue=String(q.venue||"").toLowerCase(),race=Math.max(1,Math.min(12,Number(q.race||1)));if(!VENUE_NAMES[venue])return res.status(400).json({ok:false,error:"invalid venue"});const home=await getHtml("https://keirin.kdreams.jp/"+venue+"/"),urls=links(home,venue,race);if(!urls.length)throw new Error("race detail link not found");const data=parseRace(await getHtml(urls[0]),venue,race,urls[0]);res.setHeader("Cache-Control","s-maxage=30, stale-while-revalidate=120");return res.status(200).json({ok:true,data})}catch(e){console.error("race api error",e);return res.status(502).json({ok:false,error:String(e&&e.message||e)})}};
+const VENUE_NAMES = {
+  hakodate:"函館", aomori:"青森", iwakitaira:"いわき平", yahiko:"弥彦", maebashi:"前橋",
+  toride:"取手", utsunomiya:"宇都宮", omiya:"大宮", seibuen:"西武園", keiokaku:"京王閣",
+  tachikawa:"立川", matsudo:"松戸", chiba:"千葉", kawasaki:"川崎", hiratsuka:"平塚",
+  odawara:"小田原", ito:"伊東", shizuoka:"静岡", nagoya:"名古屋", gifu:"岐阜",
+  ogaki:"大垣", toyohashi:"豊橋", toyama:"富山", matsusaka:"松阪", yokkaichi:"四日市",
+  fukui:"福井", nara:"奈良", mukomachi:"向日町", wakayama:"和歌山", kishiwada:"岸和田",
+  tamano:"玉野", hiroshima:"広島", hofu:"防府", takamatsu:"高松", komatsushima:"小松島",
+  kochi:"高知", matsuyama:"松山", kokura:"小倉", kurume:"久留米", takeo:"武雄",
+  sasebo:"佐世保", beppu:"別府", kumamoto:"熊本"
+};
+
+function cleanHtml(html) {
+  return String(html)
+    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "ja,en;q=0.8"
+      },
+      cache: "no-store",
+      signal: controller.signal
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error("Kドリームス HTTP " + response.status);
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function findRaceUrl(homeHtml, venue, race) {
+  const html = String(homeHtml);
+  const re = /href=["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+  let match;
+  while ((match = re.exec(html))) {
+    const href = match[1];
+    const text = cleanHtml(match[2]);
+    if (href.indexOf(venue) !== -1 && href.indexOf("racedetail") !== -1 && text.indexOf(String(race) + "R") !== -1) {
+      return new URL(href, "https://keirin.kdreams.jp").href;
+    }
+  }
+  return null;
+}
+
+function parseRace(html, venue, race, url) {
+  const text = cleanHtml(html);
+  const players = [];
+  for (let n = 1; n <= 7; n++) {
+    const re = new RegExp("(^|\\\\s)" + n + "\\\\s+([^\\\\s〖]{2,20})\\\\s*〖", "m");
+    const m = text.match(re);
+    if (m) players.push({ number:n, name:m[2] });
+  }
+
+  const lineMatch = text.match(/並び予想[\\s\\S]{0,300}/);
+  const lineText = lineMatch ? lineMatch[0] : "";
+
+  const odds = [];
+  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\\s+([0-9,]+(?:\\.[0-9]+)?)/g;
+  let om;
+  while ((om = oddsRe.exec(text)) && odds.length < 30) {
+    odds.push({ combination:om[1], odds:Number(om[2].replace(/,/g, "")) });
+  }
+
+  return {
+    venue,
+    venueName:VENUE_NAMES[venue],
+    race,
+    url,
+    players,
+    lineText,
+    odds,
+    source:"Kドリームス",
+    fetchedAt:new Date().toISOString()
+  };
+}
+
+module.exports = async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=120");
+
+  try {
+    const query = req.query || {};
+    const venue = String(query.venue || "").toLowerCase();
+    const race = Math.max(1, Math.min(12, parseInt(query.race || "1", 10) || 1));
+
+    if (!VENUE_NAMES[venue]) {
+      return res.status(400).json({ ok:false, error:"開催場が不正です" });
+    }
+
+    const homeUrl = "https://keirin.kdreams.jp/" + venue + "/";
+    const homeHtml = await fetchText(homeUrl);
+    const raceUrl = findRaceUrl(homeHtml, venue, race);
+
+    if (!raceUrl) {
+      return res.status(502).json({
+        ok:false,
+        error:"Kドリームスから" + VENUE_NAMES[venue] + " " + race + "Rの詳細ページを見つけられませんでした"
+      });
+    }
+
+    const raceHtml = await fetchText(raceUrl);
+    const data = parseRace(raceHtml, venue, race, raceUrl);
+
+    if (!data.players.length) {
+      return res.status(502).json({ ok:false, error:"出走選手データを取得できませんでした" });
+    }
+
+    return res.status(200).json({ ok:true, data });
+  } catch (error) {
+    console.error("api/race error:", error);
+    return res.status(502).json({
+      ok:false,
+      error: error && error.message ? error.message : "サーバー側でデータ取得に失敗しました"
+    });
+  }
+};
