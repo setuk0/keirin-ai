@@ -69,11 +69,11 @@ function parseRace(html, venue, race, url) {
     if (match) players.push({ number:n, name:match[2] });
   }
 
-  const lineMatch = text.match(/並び予想[\\s\\S]{0,300}/);
+  const lineMatch = text.match(/並び予想[\s\S]{0,300}/);
   const lineText = lineMatch ? lineMatch[0] : "";
 
   const odds = [];
-  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\\s+([0-9,]+(?:\\.[0-9]+)?)/g;
+  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\s+([0-9,]+(?:\.[0-9]+)?)/g;
   let om;
   while ((om = oddsRe.exec(text)) && odds.length < 30) {
     odds.push({ combination:om[1], odds:Number(om[2].replace(/,/g, "")) });
