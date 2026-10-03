@@ -11,12 +11,16 @@ const VENUE_NAMES = {
 
 function cleanHtml(html) {
   return String(html)
+    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\\s+/g, " ")
     .trim();
 }
 
@@ -26,7 +30,7 @@ async function fetchText(url) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; KeirinAI/1.0)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "ja,en;q=0.8"
       },
@@ -65,23 +69,58 @@ function findRaceUrl(html, venue, race) {
   return null;
 }
 
-function parseRace(html, venue, race, url) {
-  const text = cleanHtml(html);
+function getRaceBlock(text, race) {
+  const marker = String(race) + "R";
+  const start = text.indexOf(marker);
+  if (start < 0) return text;
+
+  const nextMarkers = [];
+  for (let n = race + 1; n <= 12; n++) {
+    const pos = text.indexOf(String(n) + "R", start + marker.length);
+    if (pos >= 0) nextMarkers.push(pos);
+  }
+  const end = nextMarkers.length ? Math.min(...nextMarkers) : text.length;
+  return text.slice(start, end);
+}
+
+function parsePlayers(text) {
   const players = [];
 
   for (let n = 1; n <= 7; n++) {
-    const re = new RegExp("(^|\\s)" + n + "\\s+([一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}", "m");
-    const match = text.match(re);
-    if (match) players.push({ number:n, name:match[2] });
+    const patterns = [
+      new RegExp("(?:^|\\s)" + n + "\\s+(?:[一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}\\s+\\d{2,3}\\s+[AS][12]", "m"),
+      new RegExp("(?:^|\\s)" + n + "\\s+([一-龥ぁ-んァ-ヶー]{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}(?:\\s+\\d{2,3})?", "m")
+    ];
+
+    let found = null;
+
+    for (const re of patterns) {
+      const match = text.match(re);
+      if (match) {
+        const nameMatch = match[0].match(/\\s(\\S{2,12})\\s+[一-龥ぁ-んァ-ヶー]{2,6}\\s+\\d{2}/);
+        if (nameMatch) found = nameMatch[1];
+      }
+      if (found) break;
+    }
+
+    if (found) players.push({ number:n, name:found });
   }
 
-  const lineMatch = text.match(/並び予想[\s\S]{0,300}/);
+  return players;
+}
+
+function parseRace(html, venue, race, url) {
+  const text = cleanHtml(html);
+  const block = getRaceBlock(text, race);
+  const players = parsePlayers(block);
+
+  const lineMatch = block.match(/並び予想[\\s\\S]{0,300}/);
   const lineText = lineMatch ? lineMatch[0] : "";
 
   const odds = [];
-  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\s+([0-9,]+(?:\.[0-9]+)?)/g;
+  const oddsRe = /([1-7](?:-|=)[1-7](?:-|=)[1-7])\\s+([0-9,]+(?:\\.[0-9]+)?)/g;
   let om;
-  while ((om = oddsRe.exec(text)) && odds.length < 30) {
+  while ((om = oddsRe.exec(block)) && odds.length < 30) {
     odds.push({ combination:om[1], odds:Number(om[2].replace(/,/g, "")) });
   }
 
@@ -113,9 +152,10 @@ module.exports = async function handler(req, res) {
 
     const homeHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/");
     let raceUrl = findRaceUrl(homeHtml, venue, race);
+    let cardHtml = null;
 
     if (!raceUrl) {
-      const cardHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
+      cardHtml = await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
       raceUrl = findRaceUrl(cardHtml, venue, race);
     }
 
@@ -126,11 +166,21 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const raceHtml = await fetchText(raceUrl);
-    const data = parseRace(raceHtml, venue, race, raceUrl);
+    let raceHtml = await fetchText(raceUrl);
+    let data = parseRace(raceHtml, venue, race, raceUrl);
+
+    // 詳細ページがJS等で選手情報を含まない場合は、
+    // Kドリームスの出走表一覧ページを直接解析する。
+    if (!data.players.length) {
+      cardHtml = cardHtml || await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
+      data = parseRace(cardHtml, venue, race, raceUrl);
+    }
 
     if (!data.players.length) {
-      return res.status(502).json({ ok:false, error:"出走選手データを取得できませんでした" });
+      return res.status(502).json({
+        ok:false,
+        error:VENUE_NAMES[venue] + " " + race + "Rの選手情報を解析できませんでした"
+      });
     }
 
     return res.status(200).json({ ok:true, data:data });
