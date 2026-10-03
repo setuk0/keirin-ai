@@ -17,10 +17,13 @@ function parseToday(html){
   if(!match) throw new Error('today marker not found in upstream page');
   const y=match[1], m=Number(match[2]), day=Number(match[3]);
   const start=plain.indexOf(match[0]);
-  const after=plain.slice(start+match[0].length);
-  const listText=after.slice(0,5000);
-  const venues=VENUES.filter(([name])=>listText.includes(name)).map(([name,slug])=>({name,slug}));
-  if(!venues.length) throw new Error('no venues parsed from upstream page');
+  const after=plain.slice(start+match[0].length, start+match[0].length+2500);
+  const venues=[];
+  for(const [name,slug] of VENUES){
+    const re=new RegExp('(?:^|\\s)'+name+'(?:\\s|$)');
+    if(re.test(after) && !venues.some(v=>v.slug===slug)) venues.push({name,slug});
+  }
+  if(!venues.length) throw new Error('no venues parsed from today section');
   return {date:`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`,venues,source:'https://keirin.kdreams.jp/kaisai/',fetchedAt:new Date().toISOString()};
 }
 
