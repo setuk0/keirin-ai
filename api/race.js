@@ -11,8 +11,10 @@ const VENUE_NAMES = {
 
 function cleanHtml(html) {
   return String(html)
-    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<script[^>]*>/gi, " ")
+    .replace(/<\\/script>/gi, " ")
+    .replace(/<style[^>]*>/gi, " ")
+    .replace(/<\\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -20,8 +22,7 @@ function cleanHtml(html) {
     .replace(/&gt;/gi, ">")
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
-    .replace(/[\\t\\r\\n]+/g, " ")
-    .replace(/ +/g, " ")
+    .replace(/[ \t\r\n]+/g, " ")
     .trim();
 }
 
@@ -41,27 +42,19 @@ async function fetchText(url) {
 
 function findRaceUrl(html, venue, race) {
   const source = String(html);
-  const re = /href=["']([^"']+)["'][^>]*>[\\s\\S]*?<[^>]*>?[ \\t\\r\\n]*([0-9]{1,2})R[ \\t\\r\\n]*[\\s\\S]*?<\\/a>/gi;
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\\/a>/gis;
   let m;
+
   while ((m = re.exec(source))) {
     const href = m[1];
-    if (href.indexOf("/" + venue + "/") >= 0 &&
-        (href.indexOf("/racecard/") >= 0 || href.indexOf("racedetail") >= 0) &&
-        m[2] === String(race)) {
+    const anchorText = cleanHtml(m[2]);
+    if (href.indexOf("/" + venue + "/") < 0) continue;
+    if (href.indexOf("/racecard/") < 0 && href.indexOf("racedetail") < 0) continue;
+    if (anchorText.indexOf(String(race) + "R") >= 0) {
       return new URL(href, "https://keirin.kdreams.jp").href;
     }
   }
 
-  const hrefs = source.match(/href=["'][^"']*(?:racecard|racedetail)[^"']*["']/gi) || [];
-  for (const item of hrefs) {
-    const href = item.replace(/^href=["']|["']$/gi, "");
-    if (href.indexOf("/" + venue + "/") >= 0) {
-      const compact = href.replace(/[^0-9]/g, "");
-      if (compact.endsWith(String(race).padStart(2, "0"))) {
-        return new URL(href, "https://keirin.kdreams.jp").href;
-      }
-    }
-  }
   return null;
 }
 
