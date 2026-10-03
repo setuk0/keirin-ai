@@ -108,7 +108,7 @@ function verifiedOmiya1R() {
 
 async function findRacecardUrl(venue) {
   const html = await fetchText("https://keirin.kdreams.jp/" + venue + "/racecard/");
-  const re = /href=["']([^"']*\\/racecard\\/[^"']+)["']/gi;
+  const re = /href=["']([^"']*racecard[^"']*)["']/gi;
   let m;
   while ((m = re.exec(html)) !== null) {
     const href = m[1];
