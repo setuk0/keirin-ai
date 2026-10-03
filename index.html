@@ -44,9 +44,9 @@ async function loadRaceData(){
   if(!r.ok||!j.ok) throw new Error(j.error||'データ取得失敗');
   currentRaceData=j.data;
   const players=j.data.players||[];
-  rows.innerHTML=players.length?players.map((p,i)=>{
-    const score=Math.max(55,90-i*5), top=Math.max(18,58-i*6);
-    return '<tr><td>'+p.number+'</td><td>'+esc(p.name)+'</td><td>—</td><td>'+score+'</td><td>'+top+'%</td></tr>';
+  rows.innerHTML=players.length?players.map(p=>{
+    const score=p.aiScore??60, top=p.top3Probability??20;
+    return '<tr><td>'+p.number+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.style||'—')+'</td><td>'+score+'</td><td>'+top+'%</td></tr>';
   }).join(''):'<tr><td colspan="5">選手データを取得できませんでした</td></tr>';
   const line=j.data.lineText||'ライン情報を取得できませんでした';
   document.querySelector('.linebox').innerHTML='<b>ライン・展開情報</b><br>'+esc(line);
@@ -72,9 +72,10 @@ async function showPrediction(){
   try{j=JSON.parse(raw)}catch(_){throw new Error('APIサーバーがJSONを返していません（HTTP '+r.status+'）')};
   if(!r.ok||!j.ok) throw new Error(j.error||'データ取得失敗');
   const d=j.data, players=d.players||[], odds=d.odds||[];
-  const nums=players.map(p=>p.number), a=nums[0]||1, b=nums[1]||2, c=nums[2]||3;
+  const ranked=[...players].sort((x,y)=>(y.aiScore||0)-(x.aiScore||0));
+  const a=ranked[0]?.number||1, b=ranked[1]?.number||2, c=ranked[2]?.number||3;
   const oddText=odds.slice(0,3).map(x=>x.combination+' '+x.odds+'倍').join(' / ')||'取得中';
-  result.innerHTML='<h2>AI推奨買い目</h2><div class="notice">🤖 '+esc(d.venueName)+' '+race+'R　実データ取得済み</div><div class="table-wrap"><table class="table"><thead><tr><th>車番</th><th>選手</th></tr></thead><tbody>'+players.map(p=>'<tr><td>'+p.number+'</td><td>'+esc(p.name)+'</td></tr>').join('')+'</tbody></table></div><div class="linebox"><b>ライン・展開情報</b><br>'+esc(d.lineText||'取得済み')+'</div><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>本線　'+a+' → '+b+' → '+c+'</strong></div><div>◎</div></div><div class="ticket"><div><span class="star">★★★★☆</span><br><strong>押さえ　'+b+' → '+a+' → '+c+'</strong></div><div>○</div></div><div class="ticket"><div><span class="star">★★★☆☆</span><br><strong>穴　'+a+' → '+c+' → '+b+'</strong></div><div>▲</div></div></div><div class="analysis">取得オッズ例：'+esc(oddText)+'<br>※実データを取得して算出した暫定AI分析です。</div>';
+  result.innerHTML='<h2>AI推奨買い目</h2><div class="notice">🤖 '+esc(d.venueName)+' '+race+'R　実データ取得済み</div><div class="table-wrap"><table class="table"><thead><tr><th>車番</th><th>選手</th><th>脚質</th><th>印</th><th>AI指数</th><th>3着内</th></tr></thead><tbody>'+ranked.map(p=>'<tr><td>'+p.number+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.style||'—')+'</td><td>'+esc(p.mark||'')+'</td><td>'+esc(String(p.aiScore??''))+'</td><td>'+esc(String(p.top3Probability??''))+'%</td></tr>').join('')+'</tbody></table></div><div class="linebox"><b>ライン・展開情報</b><br>'+esc(d.lineText||'取得済み')+'</div><div class="tickets"><div class="ticket"><div><span class="star">★★★★★</span><br><strong>本線　'+a+' → '+b+' → '+c+'</strong></div><div>◎</div></div><div class="ticket"><div><span class="star">★★★★☆</span><br><strong>押さえ　'+b+' → '+a+' → '+c+'</strong></div><div>○</div></div><div class="ticket"><div><span class="star">★★★☆☆</span><br><strong>穴　'+a+' → '+c+' → '+b+'</strong></div><div>▲</div></div></div><div class="analysis">取得オッズ例：'+esc(oddText)+'<br>※実データを取得して算出した暫定AI分析です。</div>';
   document.getElementById('raceTitle').textContent=venueName+' '+race+'R　AI分析完了';
  }catch(e){result.innerHTML='<h2>AI推奨買い目</h2><div class="notice">データ取得に失敗しました：'+esc(e.message)+'</div>'}
  finally{loading.style.display='none';btn.disabled=false}
