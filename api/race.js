@@ -44,18 +44,24 @@ async function fetchText(url) {
 function findRaceUrl(html, venue, race) {
   const source = String(html);
   const hrefRe = /href=["']([^"']+)["']/gi;
+  const target = String(race) + "R";
   let match;
+
   while ((match = hrefRe.exec(source))) {
     const href = match[1];
-    if (href.indexOf(venue) === -1 || href.indexOf("racedetail") === -1) continue;
+    if (href.indexOf("/" + venue + "/") === -1) continue;
+    if (href.indexOf("/racecard/") === -1 && href.indexOf("racedetail") === -1) continue;
+
     const end = source.indexOf(">", hrefRe.lastIndex);
     const close = source.indexOf("</a>", end);
     if (end < 0 || close < 0) continue;
+
     const anchorText = cleanHtml(source.slice(end + 1, close));
-    if (anchorText.indexOf(String(race) + "R") !== -1) {
+    if (anchorText.indexOf(target) !== -1) {
       return new URL(href, "https://keirin.kdreams.jp").href;
     }
   }
+
   return null;
 }
 
